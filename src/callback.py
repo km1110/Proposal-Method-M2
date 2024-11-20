@@ -40,6 +40,8 @@ class PseudoCallback(Callback):
         self.threshold1 = args.threshold1
         self.threshold2 = args.threshold2
 
+        self.class_ratios = []
+
         # labeled/unlabeledの一致率推移
         self.unlabeled_accuracy = []
         self.labeled_accuracy = []
@@ -114,6 +116,13 @@ class PseudoCallback(Callback):
         )  # 1 if labeled, else alpha_t
         return coefs * entropies
 
+    def calc_class_ratios(self, prediction):
+        pred = np.argmax(prediction, axis=1)
+        class_counts = np.bincount(pred, minlength=10)
+        total_counts = len(pred)
+        class_ratio = class_counts / total_counts
+        self.class_ratios.append(class_ratio)
+
     def accuracy(self, y_true, y_pred):
         y_true_item = y_true[:, : self.n_classes]
         return categorical_accuracy(y_true_item, y_pred)
@@ -132,13 +141,17 @@ class PseudoCallback(Callback):
             )
 
         # unlabeled のラベルの更新
+        pred = self.model.predict(self.X_train_unlabeled)
         self.y_train_unlabeled_prediction = np.argmax(
-            self.model.predict(self.X_train_unlabeled),
+            pred,
             axis=-1,
         ).reshape(-1, 1)
         y_train_labeled_prediction = np.argmax(
             self.model.predict(self.X_train_labeled), axis=-1
         ).reshape(-1, 1)
+
+        if epoch in [19, 69, 99]:
+            self.calc_class_ratios(pred)
 
         # ground-truthとの一致率
         self.unlabeled_accuracy.append(
