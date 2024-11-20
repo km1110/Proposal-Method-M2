@@ -22,7 +22,4 @@ def train(args):
     hist["labeled_accuracy"] = pseudo.labeled_accuracy
     hist["unlabeled_accuracy"] = pseudo.unlabeled_accuracy
 
-    # with open(f"result_pseudo/history_{n_labeled_data:05}.dat", "wb") as fp:
-    #     pickle.dump(hist, fp)
-
     return model, pseudo.X_test, pseudo.y_test
