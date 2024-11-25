@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Attach to Makefile Debugpy",
+        "type": "python",
+        "request": "attach",
+        "connect": {
+          "host": "localhost",
+          "port": 5678
+        },
+        "pathMappings": [
+          {
+            "localRoot": "${workspaceFolder}",
+            "remoteRoot": "${workspaceFolder}"  // 必要に応じて調整
+          }
+        ],
+        "justMyCode": false
+      }
+    ]
+  }
