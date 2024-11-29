@@ -28,6 +28,7 @@ def apply_weak_augmentation(X):
     """
     データセット全体に弱いデータ拡張を適用。
     """
+    X = tf.cast(X, tf.float32)
     X_augmented = tf.map_fn(weak_augmentation, X, fn_output_signature=tf.float32)
     return X_augmented
 

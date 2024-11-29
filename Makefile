@@ -2,12 +2,12 @@
 MODEL           		 =   CNN
 LOSS             		 =   PL
 LEARNING_LATE   		 =   1e-5
-EPOCH                    =   5
+EPOCH                    =   100
 
 # data info
 LABELED_NUM			 =	 500
-UNLABEL_NUM          =   1000
-BATCH_SIZE           =   128
+UNLABEL_NUM          =   10000
+BATCH_SIZE           =   1024
 
 # Loss
 THRESHOLD1           =   10
@@ -32,6 +32,7 @@ debug:
 		--mlflow_experiment_name ${EXPERIMENT_NAME} \
 		--mlflow_tag ${TAG} \
 		--labeled_num ${LABELED_NUM} \
+		--unlabel_num ${UNLABEL_NUM} \
 		--batch_size ${BATCH_SIZE} \
 		--model ${MODEL} \
 		--loss CCE \
@@ -47,6 +48,7 @@ ssl:
 		--mlflow_experiment_name ${EXPERIMENT_NAME} \
 		--mlflow_tag ${TAG} \
 		--labeled_num ${LABELED_NUM} \
+		--unlabel_num ${UNLABEL_NUM} \
 		--batch_size ${BATCH_SIZE} \
 		--model ${MODEL} \
 		--loss CCE \

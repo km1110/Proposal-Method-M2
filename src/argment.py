@@ -8,6 +8,7 @@ def get_arguments():
     parser.add_argument("--mlflow_tag", required=True, type=str)
 
     parser.add_argument("--labeled_num", default=None, type=int)
+    parser.add_argument("--unlabel_num", default=None, type=int)
     parser.add_argument("--batch_size", default=512, type=int)
 
     parser.add_argument("--model", default="CNN", type=str)

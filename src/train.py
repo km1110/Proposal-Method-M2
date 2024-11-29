@@ -13,12 +13,13 @@ def train(args):
     if not os.path.exists("result_pseudo"):
         os.mkdir("result_pseudo")
 
-    hist = model.fit_generator(
+    hist = model.fit(
         pseudo.train_generator(),
         steps_per_epoch=pseudo.train_steps_per_epoch,
         callbacks=[pseudo],
         epochs=args.epochs,
     ).history
+    
     hist["labeled_accuracy"] = pseudo.labeled_accuracy
     hist["unlabeled_accuracy"] = pseudo.unlabeled_accuracy
 

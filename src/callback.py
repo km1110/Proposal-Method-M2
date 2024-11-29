@@ -7,6 +7,8 @@ from keras.callbacks import Callback
 from keras.datasets import cifar10
 from keras.metrics import categorical_accuracy
 
+from utils import apply_weak_augmentation
+
 
 class PseudoCallback(Callback):
     def __init__(self, model, args):
@@ -23,6 +25,9 @@ class PseudoCallback(Callback):
         self.y_train_labeled = y_train[indices[: args.labeled_num]]
         self.X_train_unlabeled = X_train[indices[args.labeled_num :]]
         self.y_train_unlabeled_groundtruth = y_train[indices[args.labeled_num :]]
+        self.X_train_unlabeled_weak_augmentation = apply_weak_augmentation(self.X_train_unlabeled)
+        self.y_train_unlabeled_weak_augmentation = self.y_train_unlabeled_groundtruth
+        
 
         # unlabeledの予測値
         self.y_train_unlabeled_prediction = np.random.randint(
@@ -45,48 +50,57 @@ class PseudoCallback(Callback):
         # labeled/unlabeledの一致率推移
         self.unlabeled_accuracy = []
         self.labeled_accuracy = []
-
+    
     def train_mixture(self):
-        # 返り値：X, y, フラグ
         X_train_join = np.r_[self.X_train_labeled, self.X_train_unlabeled]
         y_train_join = np.r_[self.y_train_labeled, self.y_train_unlabeled_prediction]
+        
+        X_train_join_weak_augmentation = np.r_[self.X_train_labeled, self.X_train_unlabeled_weak_augmentation]
+        y_train_join_weak_augmentation = np.r_[self.y_train_labeled, self.y_train_unlabeled_prediction]
+        
         flag_join = np.r_[
             np.repeat(0.0, self.X_train_labeled.shape[0]),
             np.repeat(1.0, self.X_train_unlabeled.shape[0]),
         ].reshape(-1, 1)
+        
+        flag_join_weak_augmentation = np.r_[
+            np.repeat(0.0, self.X_train_labeled.shape[0]),
+            np.repeat(2.0, self.X_train_unlabeled.shape[0]),
+        ].reshape(-1, 1)
+        
         indices = np.arange(flag_join.shape[0])
         np.random.shuffle(indices)
-        return X_train_join[indices], y_train_join[indices], flag_join[indices]
+        
+        return X_train_join[indices], y_train_join[indices], X_train_join_weak_augmentation[indices], y_train_join_weak_augmentation[indices], flag_join[indices], flag_join_weak_augmentation[indices]
+        
+    
+    def genarate_batch_size_data(self, X, y, X_weak_aug, y_weak_aug, flag, flag_weak_aug, index):
+        x_batch = X[index * self.batch_size : (index + 1) * self.batch_size]
+        y_batch = to_categorical(y[index * self.batch_size : (index + 1) * self.batch_size], self.n_classes)
+        y_batch_add_flag = np.c_[y_batch, flag[index * self.batch_size : (index + 1) * self.batch_size]]
+        
+        x_batch_weak_aug = X_weak_aug[index * self.batch_size : (index + 1) * self.batch_size]
+        y_batch_weak_aug = to_categorical(y_weak_aug[index * self.batch_size : (index + 1) * self.batch_size], self.n_classes)
+        y_batch_add_flag_weak_aug = np.c_[y_batch_weak_aug, flag_weak_aug[index * self.batch_size : (index + 1) * self.batch_size]]
+        
+        flag =  y_batch_add_flag_weak_aug[:, self.n_classes]
+        mask = (flag == 2)
+        x_batch_unlabel_weak_aug = x_batch_weak_aug[mask]
+        y_batch_unlabel_weak_aug = y_batch_add_flag_weak_aug[mask]
+        
+        X_batch = np.r_[x_batch, x_batch_unlabel_weak_aug]
+        y_batch = np.r_[y_batch_add_flag, y_batch_unlabel_weak_aug]
+        
+        X_batch = (X_batch / 255.0).astype(np.float32)
+        
+        return X_batch, y_batch
 
     def train_generator(self):
         while True:
-            X, y, flag = self.train_mixture()
+            X, y, X_weak_aug, y_weak_aug, flag, flag_weak_aug = self.train_mixture()
             n_batch = X.shape[0] // self.batch_size
             for i in range(n_batch):
-                X_batch = (
-                    X[i * self.batch_size : (i + 1) * self.batch_size] / 255.0
-                ).astype(np.float32)
-                y_batch = to_categorical(
-                    y[i * self.batch_size : (i + 1) * self.batch_size], self.n_classes
-                )
-                y_batch = np.c_[
-                    y_batch, flag[i * self.batch_size : (i + 1) * self.batch_size]
-                ]
-                yield X_batch, y_batch
-
-    def test_generator(self):
-        while True:
-            indices = np.arange(self.y_test.shape[0])
-            np.random.shuffle(indices)
-            for i in range(len(indices) // self.batch_size):
-                current_indices = indices[
-                    i * self.batch_size : (i + 1) * self.batch_size
-                ]
-                X_batch = (self.X_test[current_indices] / 255.0).astype(np.float32)
-                y_batch = to_categorical(self.y_test[current_indices], self.n_classes)
-                y_batch = np.c_[
-                    y_batch, np.repeat(0.0, y_batch.shape[0])
-                ]  # flagは0とする
+                X_batch, y_batch = self.genarate_batch_size_data(X, y, X_weak_aug, y_weak_aug, flag, flag_weak_aug, i)
                 yield X_batch, y_batch
 
     def calc_prior_loss(self, y_true, y_pred):
@@ -109,12 +123,29 @@ class PseudoCallback(Callback):
     def loss_function(self, y_true, y_pred):
         # penalty = self.calc_prior_loss(y_true, y_pred)
         y_true_item = y_true[:, : self.n_classes]
-        unlabeled_flag = y_true[:, self.n_classes]
-        entropies = keras.losses.categorical_crossentropy(y_true_item, y_pred)
-        coefs = (
-            1.0 - unlabeled_flag + self.alpha_t * unlabeled_flag
-        )  # 1 if labeled, else alpha_t
-        return coefs * entropies
+        
+        flag = y_true[:, self.n_classes]
+        labeled_mask = (flag == 0)
+        unlabel_mask = (flag == 1)
+        augment_mask = (flag == 2)
+        
+        y_true_labeled = y_true_item[labeled_mask]
+        y_pred_labeled = y_pred[labeled_mask]
+        y_true_unlabel = y_true_item[unlabel_mask]
+        y_pred_unlabel = y_pred[unlabel_mask]
+        y_pred_augment = y_pred[augment_mask]
+        
+        l_s = keras.losses.categorical_crossentropy(y_true_labeled, y_pred_labeled)
+        l_u = keras.losses.categorical_crossentropy(y_true_unlabel, y_pred_unlabel)
+        
+        l_r = tf.math.log(( y_pred_unlabel / y_pred_augment ) + 1e-8)
+        
+        l_u = self.alpha_t * l_u  + l_r
+        
+        if self.alpha_t == 0:
+            print("Supervised Loss!")
+        
+        return l_s + l_u if self.alpha_t != 0 else l_s
 
     def calc_class_ratios(self, prediction):
         pred = np.argmax(prediction, axis=1)
@@ -139,7 +170,7 @@ class PseudoCallback(Callback):
                 / (self.threshold2 - self.threshold1)
                 * self.delta1
             )
-
+        
         # unlabeled のラベルの更新
         pred = self.model.predict(self.X_train_unlabeled)
         self.y_train_unlabeled_prediction = np.argmax(
@@ -168,16 +199,3 @@ class PseudoCallback(Callback):
             "/",
             self.unlabeled_accuracy[-1],
         )
-
-    # def on_train_end(self, logs):
-    #     y_true = np.ravel(self.y_test)
-    #     emb_model = Model(self.model.input, self.model.layers[-2].output)
-    #     embedding = emb_model.predict(self.X_test / 255.0)
-    #     proj = TSNE(n_components=2).fit_transform(embedding)
-    #     cmp = plt.get_cmap("tab10")
-    #     plt.figure()
-    #     for i in range(10):
-    #         select_flag = y_true == i
-    #         plt_latent = proj[select_flag, :]
-    #         plt.scatter(plt_latent[:, 0], plt_latent[:, 1], color=cmp(i), marker=".")
-    #     plt.savefig(f"result_pseudo/embedding_{self.n_labeled_sample:05}.png")
